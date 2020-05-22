@@ -32,5 +32,6 @@
 *.app
 
 
-./build/*
-./data/*
+build/
+data/
+pdfs/
