@@ -18,6 +18,8 @@ using namespace std;
 
 int main(int argc, char const *argv[])
 {
+	//TO DO : Generalize the use for multiple objects  instead of only one 
+	
 	//Target
 	Mat target = imread(TARGET);
 
@@ -148,6 +150,7 @@ int main(int argc, char const *argv[])
 
 
 				cvtColor(first_frame, previous, cv::COLOR_BGR2GRAY);
+				//TO DO : Solve no reference error, could be the wrong library included or mismatched types 
 				calcOpticalFlowPyrLK(previous, frame, prev_corn_vec, next_corn_vec, status, err,
 				Size(21, 21), 3, term, 0);
 
