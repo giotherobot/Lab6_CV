@@ -9,8 +9,6 @@
 #include <opencv2/optflow.hpp>
 
 
-#define VIDEO "./data/video.mov"
-#define TARGET "./data/objects/obj2.png"
 #define RATIO 1.5
 
 using namespace cv;
@@ -18,10 +16,21 @@ using namespace std;
 
 int main(int argc, char const *argv[])
 {
-	//TO DO : Generalize the use for multiple objects  instead of only one 
+	if(argc != 3)
+	{	
+		cout << "Usage: \n \t program <path-to-video-file> <path-to-targets> \n \t The second argument should be a valid glob string. " << endl;
+		return -1;
+	}
+
+	// Get file location from command args
+	String video_file = argv[1];
+	vector<String> target_files;
+	glob(argv[2], target_files);
 	
-	//Target
-	Mat target = imread(TARGET);
+	vector<Mat> targets;
+	//Targets
+	for (int i = 0; i < target_files.size(); i++)
+		targets.push_back(imread(target_files[i]));
 
 	//create the feature detector
 	vector<KeyPoint> keyPoints_src;
@@ -29,11 +38,11 @@ int main(int argc, char const *argv[])
 
 	//detect and compute descriptors
 	Ptr<xfeatures2d::SIFT> sift = xfeatures2d::SIFT::create();
-	sift->detect(target, keyPoints_src);
-	sift->compute(target, keyPoints_src, descriptor_src);
+	sift->detect(targets[0], keyPoints_src); // TODO multi target
+	sift->compute(targets[0], keyPoints_src, descriptor_src);
 
     //Object to process videos
-    VideoCapture cap(VIDEO);
+    VideoCapture cap(video_file);
 
     if (cap.isOpened())
     {
@@ -86,7 +95,7 @@ int main(int argc, char const *argv[])
 
         //Draw the matches
         Mat output;
-        drawMatches(target, keyPoints_src, first_frame , keyPoints_dst, valid_matches, output);
+        drawMatches(targets[0], keyPoints_src, first_frame , keyPoints_dst, valid_matches, output);
         resize(output, output, Size(output.cols/2, output.rows/2));
         imshow("TMP5", output);
 
@@ -94,9 +103,9 @@ int main(int argc, char const *argv[])
 
         //Compute the traslation between src image to video
         Point3d top_left = Point3d(0, 0, 1);
-        Point3d top_right = Point3d(target.cols, 0, 1);
-        Point3d bottom_right = Point3d(target.cols, target.rows, 1);
-        Point3d bottom_left = Point3d(0, target.rows, 1);
+        Point3d top_right = Point3d(targets[0].cols, 0, 1);
+        Point3d bottom_right = Point3d(targets[0].cols, targets[0].rows, 1);
+        Point3d bottom_left = Point3d(0, targets[0].rows, 1);
 
         vector<Mat> dst_corn;
         dst_corn.push_back(homography * Mat(top_left));
@@ -150,7 +159,7 @@ int main(int argc, char const *argv[])
 
 
 				cvtColor(first_frame, previous, cv::COLOR_BGR2GRAY);
-				//TO DO : Solve no reference error, could be the wrong library included or mismatched types 
+				// TODO : Solve no reference error, could be the wrong library included or mismatched types 
 				calcOpticalFlowPyrLK(previous, frame, prev_corn_vec, next_corn_vec, status, err,
 				Size(21, 21), 3, term, 0);
 
