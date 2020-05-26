@@ -2,7 +2,12 @@ cmake_minimum_required(VERSION 3.2)
 
 project(lab6)
 
-find_package(OpenCV REQUIRED)
+if(DEFINED ENV{OPENCV_INSTALL_DIR})
+    find_package(OpenCV 4.3 REQUIRED PATHS $ENV{OPENCV_INSTALL_DIR})
+else()
+    message("OPENCV_INSTALL_DIR not set, searching in default location(s)")
+    find_package(OpenCV 4.3 REQUIRED)
+endif(DEFINED ENV{OPENCV_INSTALL_DIR})
 
 include_directories(
     ${OpenCV_INCLUDE_DIRS}
