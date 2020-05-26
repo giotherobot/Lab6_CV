@@ -3,8 +3,11 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/videoio.hpp>
 #include <opencv2/features2d.hpp>
+#include <opencv2/xfeatures2d.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/ccalib.hpp>
+#include <opencv2/optflow.hpp>
+
 
 #define VIDEO "./data/video.mov"
 #define TARGET "./data/objects/obj2.png"
@@ -23,14 +26,13 @@ int main(int argc, char const *argv[])
 	Mat descriptor_src;
 
 	//detect and compute descriptors
-	Ptr<ORB> orb = ORB::create();
-	orb->detect(target, keyPoints_src);
-	orb->compute(target, keyPoints_src, descriptor_src);
+	Ptr<xfeatures2d::SIFT> sift = xfeatures2d::SIFT::create();
+	sift->detect(target, keyPoints_src);
+	sift->compute(target, keyPoints_src, descriptor_src);
 
     //Object to process videos
     VideoCapture cap(VIDEO);
 
-    int condition = 0;
     if (cap.isOpened())
     {
     	//First frame on which we should locate the objects
@@ -41,8 +43,8 @@ int main(int argc, char const *argv[])
 		vector<KeyPoint> keyPoints_dst;
 		Mat descriptor_dst;
 
-		orb->detect(first_frame, keyPoints_dst);
-		orb->compute(first_frame, keyPoints_dst, descriptor_dst);
+		sift->detect(first_frame, keyPoints_dst);
+		sift->compute(first_frame, keyPoints_dst, descriptor_dst);
 
 		//Match Features
 		BFMatcher matcher(cv::NORM_L2);
@@ -80,17 +82,6 @@ int main(int argc, char const *argv[])
 			if ( in_mask.at<unsigned short>(j, 0) )
 				detected_objs_pt.push_back(dst_kp[j]);
 
-		//For now it does nothing
-        while ( condition )
-        {
-            Mat frame;
-            cap >> frame;
-
-        }
-        
-        cout << "The detected object points are : " << endl;
-        cout << detected_objs_pt  << endl;
-
         //Draw the matches
         Mat output;
         drawMatches(target, keyPoints_src, first_frame , keyPoints_dst, valid_matches, output);
@@ -100,44 +91,85 @@ int main(int argc, char const *argv[])
         waitKey(0);
 
         //Compute the traslation between src image to video
-        Point3d top_left = Point3d(0,0, 1);
-        Point3d top_right = Point3d(0, target.cols, 1);
-        Point3d bottom_right = Point3d(target.rows, target.cols, 1);
-        Point3d bottom_left = Point3d(target.rows, 0, 1);
+        Point3d top_left = Point3d(0, 0, 1);
+        Point3d top_right = Point3d(target.cols, 0, 1);
+        Point3d bottom_right = Point3d(target.cols, target.rows, 1);
+        Point3d bottom_left = Point3d(0, target.rows, 1);
 
         vector<Mat> dst_corn;
         dst_corn.push_back(homography * Mat(top_left));
-        cout << "It works #1" << endl;
         dst_corn.push_back(homography * Mat(top_right));
-        cout << "It works #2" << endl;
         dst_corn.push_back(homography * Mat(bottom_right));
-        cout << "It works #3" << endl;
         dst_corn.push_back(homography * Mat(bottom_left));
-        cout << "It works #4" << endl;
-
-        cout << "Before Top_left_dst =" << dst_corn[0] << endl;
-		cout << "Top_right_dst =" << dst_corn[1] << endl;
-		cout << "Before Bottom_i_dst =" << dst_corn[2] << endl;
-		cout << "Before Bottom_Left_dst =" << dst_corn[3] << endl;
 
 		Point2f top_left_dst = Point2f(dst_corn[0].at<double>(0, 0), dst_corn[0].at<double>(1, 0));
 		Point2f top_right_dst = Point2f(dst_corn[1].at<double>(0, 0), dst_corn[1].at<double>(1, 0));
 		Point2f bttm_right_dst = Point2f(dst_corn[2].at<double>(0, 0), dst_corn[2].at<double>(1, 0));
 		Point2f bttm_left_dst = Point2f(dst_corn[3].at<double>(0, 0), dst_corn[3].at<double>(1, 0));
+
 		cout << "Top_left_dst =" << top_left_dst << endl;
-		cout << "Top_right_dst =" << top_right_dst << endl;
-		cout << "Bottom_right_dst =" << bttm_right_dst << endl;
-		cout << "Bottom_left_dst =" << bttm_left_dst << endl;
+		cout << "top_right_dst =" << top_right_dst << endl;
+		cout << "bttm_right_dst =" << bttm_right_dst << endl;
+		cout << "bttm_left_dst =" << bttm_left_dst << endl;
 
 		//Draw the rectangle
         line(first_frame, top_left_dst, top_right_dst, Scalar(0, 255, 0), 1, LINE_AA );
         line(first_frame, top_right_dst, bttm_right_dst, Scalar(0, 255, 0), 1, LINE_AA );
         line(first_frame, bttm_right_dst, bttm_left_dst, Scalar(0, 255, 0), 1, LINE_AA );
         line(first_frame, bttm_left_dst, top_left_dst, Scalar(0, 255, 0), 1, LINE_AA );
-        imshow("TMP", first_frame);
-        imshow("TMP1", first_frame);
         imshow("TMP2", first_frame);
         waitKey(0);
+
+
+        Mat previous;
+        cv::cvtColor(first_frame, previous, cv::COLOR_BGR2GRAY);
+
+        int condition = 1;
+        //For now it does nothing
+		while ( condition )
+		{
+			Mat frame;
+			cap >> frame;
+
+			if ( frame.empty() == 0 )
+				condition = 0;
+			else
+			{
+				vector<Point2f> prev_corn_vec;
+				vector<Point2f> next_corn_vec;
+				vector<uchar> status;
+				vector<float> err;
+				TermCriteria term = TermCriteria(TermCriteria::COUNT + TermCriteria::EPS, 30, 0.01);
+
+				prev_corn_vec.push_back(top_left_dst);
+				prev_corn_vec.push_back(top_right_dst);
+				prev_corn_vec.push_back(bttm_right_dst);
+				prev_corn_vec.push_back(bttm_left_dst);
+
+
+				cvtColor(first_frame, previous, cv::COLOR_BGR2GRAY);
+				calcOpticalFlowPyrLK(previous, frame, prev_corn_vec, next_corn_vec, status, err,
+				Size(21, 21), 3, term, 0);
+
+				// I am preparing for the next image
+				swap(frame , previous);
+				top_left_dst = prev_corn_vec[0];
+				top_right_dst = prev_corn_vec[1];;
+				bttm_right_dst = prev_corn_vec[2];;
+				bttm_left_dst = prev_corn_vec[3];;
+
+
+				line(frame, top_left_dst, top_right_dst, Scalar(0, 255, 0), 1, LINE_AA );
+				line(frame, top_right_dst, bttm_right_dst, Scalar(0, 255, 0), 1, LINE_AA );
+				line(frame, bttm_right_dst, bttm_left_dst, Scalar(0, 255, 0), 1, LINE_AA );
+				line(frame, bttm_left_dst, top_left_dst, Scalar(0, 255, 0), 1, LINE_AA );
+				imshow("TMP2", frame);
+				waitKey(0);
+			}
+
+		}
+
+
 
     }
 
