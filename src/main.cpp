@@ -8,16 +8,15 @@
 #include <opencv2/ccalib.hpp>
 #include <opencv2/optflow.hpp>
 
-
-#define RATIO 1.5
+#define RATIO 1.8
 
 using namespace cv;
 using namespace std;
 
 int main(int argc, char const *argv[])
 {
-	if(argc != 3)
-	{	
+	if (argc != 3)
+	{
 		cout << "Usage: \n \t program <path-to-video-file> <path-to-targets> \n \t The second argument should be a valid glob string. " << endl;
 		return -1;
 	}
@@ -26,31 +25,40 @@ int main(int argc, char const *argv[])
 	String video_file = argv[1];
 	vector<String> target_files;
 	glob(argv[2], target_files);
-	
+
 	vector<Mat> targets;
 	//Targets
 	for (int i = 0; i < target_files.size(); i++)
 		targets.push_back(imread(target_files[i]));
 
 	//create the feature detector
-	vector<KeyPoint> keyPoints_src;
-	Mat descriptor_src;
+	vector<vector<KeyPoint>> keyPoints_src;
+	vector<Mat> descriptor_src;
 
 	//detect and compute descriptors
 	Ptr<xfeatures2d::SIFT> sift = xfeatures2d::SIFT::create();
-	sift->detect(targets[0], keyPoints_src); // TODO multi target
-	sift->compute(targets[0], keyPoints_src, descriptor_src);
 
-    //Object to process videos
-    VideoCapture cap(video_file);
+	for (int i = 0; i < targets.size(); i++)
+	{
+		vector<KeyPoint> tempKey;
+		Mat tempDesc;
+		sift->detect(targets[i], tempKey);
+		sift->compute(targets[i], tempKey, tempDesc);
 
-    if (cap.isOpened())
-    {
-    	//First frame on which we should locate the objects
-    	Mat first_frame;
-    	cap >> first_frame;
+		keyPoints_src.push_back(tempKey);
+		descriptor_src.push_back(tempDesc);
+	}
 
-    	//Compute features from first frame to compare
+	//Object to process videos
+	VideoCapture cap(video_file);
+
+	if (cap.isOpened())
+	{
+		//First frame on which we should locate the objects
+		Mat first_frame;
+		cap >> first_frame;
+
+		//Compute features from first frame to compare
 		vector<KeyPoint> keyPoints_dst;
 		Mat descriptor_dst;
 
@@ -59,59 +67,65 @@ int main(int argc, char const *argv[])
 
 		//Match Features
 		BFMatcher matcher(cv::NORM_L2);
-		vector<DMatch> matches;
-		vector<DMatch> valid_matches;
+		vector<vector<DMatch>> valid_matches;
 
+		vector<Mat> homography;
 		//Computes the matches between the features extracted
-		matcher.match(descriptor_src, descriptor_dst, matches);
-
-		//Keep Only matches under a certain threashold
-		vector<Point2f> src_kp;
-		vector<Point2f> dst_kp;
-
-		//Finding min dist
-		float min_dist = matches[0].distance;
-		for ( int j = 1 ; j < matches.size(); ++j )
-			if ( min_dist > matches[j].distance)
-				min_dist = matches[j].distance;
-
-		//Refine the matches
-		for ( int j = 0 ; j < matches.size(); ++j )
-			if ( matches[j].distance < min_dist * RATIO )
-			{
-					src_kp.push_back(keyPoints_src[j].pt);
+		for (int i = 0; i < targets.size(); i++)
+		{	
+			vector<DMatch> matches;
+			vector<DMatch> tmp_valid_matches;
+			matcher.match(descriptor_src[i], descriptor_dst, matches);
+			//Keep Only matches under a certain threashold
+			vector<Point2f> src_kp;
+			vector<Point2f> dst_kp;
+			//Finding min dist
+			float min_dist = matches[0].distance;
+			for (int j = 1; j < matches.size(); ++j)
+				if (min_dist > matches[j].distance)
+					min_dist = matches[j].distance;
+			//Refine the matches
+			for (int j = 0; j < matches.size(); ++j)
+				if (matches[j].distance < min_dist * RATIO)
+				{
+					src_kp.push_back(keyPoints_src[i][j].pt);
 					dst_kp.push_back(keyPoints_dst[matches[j].trainIdx].pt);
-					valid_matches.push_back(matches[j]);
-			}
+					tmp_valid_matches.push_back(matches[j]);
+				}
+			valid_matches.push_back(tmp_valid_matches);
+			// Use of RANSAC to discard outliers
+			Mat in_mask;
+			Mat tmp_homography = findHomography(src_kp, dst_kp, cv::RANSAC, 3, in_mask);
+			homography.push_back(tmp_homography);
+			vector<Point2f> detected_objs_pt;
+			for (int j = 0; j < in_mask.rows; ++j)
+				if (in_mask.at<unsigned short>(j, 0))
+					detected_objs_pt.push_back(dst_kp[j]);
+		}
 
-		// Use of RANSAC to discard outliers
-		Mat in_mask;
-		Mat homography = findHomography(src_kp, dst_kp, cv::RANSAC, 3, in_mask);
-		vector<Point2f> detected_objs_pt;
+		//Draw the matches
+		for (int i = 0; i < targets.size(); i++)
+		{
+			Mat output;
+			drawMatches(targets[i], keyPoints_src[i], first_frame, keyPoints_dst, valid_matches, output);
+			namedWindow("Matches", WINDOW_NORMAL);
+			resizeWindow("Matches", 600, 600);
+			imshow("Matches", output);
+			waitKey(0);
+		}
 
-		for ( int j = 0 ; j < in_mask.rows ; ++j)
-			if ( in_mask.at<unsigned short>(j, 0) )
-				detected_objs_pt.push_back(dst_kp[j]);
+		int index = 2;
+		//Compute the traslation between src image to video
+		Point3d top_left = Point3d(0, 0, 1);
+		Point3d top_right = Point3d(targets[index].cols, 0, 1);
+		Point3d bottom_right = Point3d(targets[index].cols, targets[index].rows, 1);
+		Point3d bottom_left = Point3d(0, targets[index].rows, 1);
 
-        //Draw the matches
-        Mat output;
-        drawMatches(targets[0], keyPoints_src, first_frame , keyPoints_dst, valid_matches, output);
-        resize(output, output, Size(output.cols/2, output.rows/2));
-        imshow("TMP5", output);
-
-        waitKey(0);
-
-        //Compute the traslation between src image to video
-        Point3d top_left = Point3d(0, 0, 1);
-        Point3d top_right = Point3d(targets[0].cols, 0, 1);
-        Point3d bottom_right = Point3d(targets[0].cols, targets[0].rows, 1);
-        Point3d bottom_left = Point3d(0, targets[0].rows, 1);
-
-        vector<Mat> dst_corn;
-        dst_corn.push_back(homography * Mat(top_left));
-        dst_corn.push_back(homography * Mat(top_right));
-        dst_corn.push_back(homography * Mat(bottom_right));
-        dst_corn.push_back(homography * Mat(bottom_left));
+		vector<Mat> dst_corn;
+		dst_corn.push_back(homography[index] * Mat(top_left));
+		dst_corn.push_back(homography[index] * Mat(top_right));
+		dst_corn.push_back(homography[index] * Mat(bottom_right));
+		dst_corn.push_back(homography[index] * Mat(bottom_left));
 
 		Point2f top_left_dst = Point2f(dst_corn[0].at<double>(0, 0), dst_corn[0].at<double>(1, 0));
 		Point2f top_right_dst = Point2f(dst_corn[1].at<double>(0, 0), dst_corn[1].at<double>(1, 0));
@@ -124,25 +138,25 @@ int main(int argc, char const *argv[])
 		cout << "bttm_left_dst =" << bttm_left_dst << endl;
 
 		//Draw the rectangle
-        line(first_frame, top_left_dst, top_right_dst, Scalar(0, 255, 0), 1, LINE_AA );
-        line(first_frame, top_right_dst, bttm_right_dst, Scalar(0, 255, 0), 1, LINE_AA );
-        line(first_frame, bttm_right_dst, bttm_left_dst, Scalar(0, 255, 0), 1, LINE_AA );
-        line(first_frame, bttm_left_dst, top_left_dst, Scalar(0, 255, 0), 1, LINE_AA );
-        imshow("TMP2", first_frame);
-        waitKey(0);
+		line(first_frame, top_left_dst, top_right_dst, Scalar(0, 255, 0), 1, LINE_AA);
+		line(first_frame, top_right_dst, bttm_right_dst, Scalar(0, 255, 0), 1, LINE_AA);
+		line(first_frame, bttm_right_dst, bttm_left_dst, Scalar(0, 255, 0), 1, LINE_AA);
+		line(first_frame, bttm_left_dst, top_left_dst, Scalar(0, 255, 0), 1, LINE_AA);
+		namedWindow("Targets", WINDOW_NORMAL);
+		resizeWindow("Targets", 600, 600);
+		imshow("Targets", first_frame);
+		waitKey(0);
 
+		Mat previous;
+		cv::cvtColor(first_frame, previous, cv::COLOR_BGR2GRAY);
 
-        Mat previous;
-        cv::cvtColor(first_frame, previous, cv::COLOR_BGR2GRAY);
-
-        int condition = 1;
-        //For now it does nothing
-		while ( condition )
+		int condition = 1;
+		while (condition)
 		{
 			Mat frame;
 			cap >> frame;
 
-			if ( frame.empty() == 0 )
+			if (frame.empty())
 				condition = 0;
 			else
 			{
@@ -157,33 +171,27 @@ int main(int argc, char const *argv[])
 				prev_corn_vec.push_back(bttm_right_dst);
 				prev_corn_vec.push_back(bttm_left_dst);
 
-
 				cvtColor(first_frame, previous, cv::COLOR_BGR2GRAY);
-				// TODO : Solve no reference error, could be the wrong library included or mismatched types 
+
 				calcOpticalFlowPyrLK(previous, frame, prev_corn_vec, next_corn_vec, status, err,
-				Size(21, 21), 3, term, 0);
+									 Size(21, 21), 3, term, 0);
 
 				// I am preparing for the next image
-				swap(frame , previous);
+				swap(frame, previous);
 				top_left_dst = prev_corn_vec[0];
-				top_right_dst = prev_corn_vec[1];;
-				bttm_right_dst = prev_corn_vec[2];;
-				bttm_left_dst = prev_corn_vec[3];;
+				top_right_dst = prev_corn_vec[1];
+				bttm_right_dst = prev_corn_vec[2];
+				bttm_left_dst = prev_corn_vec[3];
 
-
-				line(frame, top_left_dst, top_right_dst, Scalar(0, 255, 0), 1, LINE_AA );
-				line(frame, top_right_dst, bttm_right_dst, Scalar(0, 255, 0), 1, LINE_AA );
-				line(frame, bttm_right_dst, bttm_left_dst, Scalar(0, 255, 0), 1, LINE_AA );
-				line(frame, bttm_left_dst, top_left_dst, Scalar(0, 255, 0), 1, LINE_AA );
+				line(frame, top_left_dst, top_right_dst, Scalar(0, 255, 0), 1, LINE_AA);
+				line(frame, top_right_dst, bttm_right_dst, Scalar(0, 255, 0), 1, LINE_AA);
+				line(frame, bttm_right_dst, bttm_left_dst, Scalar(0, 255, 0), 1, LINE_AA);
+				line(frame, bttm_left_dst, top_left_dst, Scalar(0, 255, 0), 1, LINE_AA);
 				imshow("TMP2", frame);
 				waitKey(0);
 			}
-
 		}
+	}
 
-
-
-    }
-
-    return 0;
+	return 0;
 }
