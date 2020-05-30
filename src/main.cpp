@@ -8,7 +8,7 @@
 #include <opencv2/ccalib.hpp>
 #include <opencv2/optflow.hpp>
 
-#define RATIO 1.8
+#define RATIO 3
 
 using namespace cv;
 using namespace std;
@@ -70,9 +70,10 @@ int main(int argc, char const *argv[])
 		vector<vector<DMatch>> valid_matches;
 
 		vector<Mat> homography;
+		vector<vector<Point2f>> detected_points;
 		//Computes the matches between the features extracted
 		for (int i = 0; i < targets.size(); i++)
-		{	
+		{
 			vector<DMatch> matches;
 			vector<DMatch> tmp_valid_matches;
 			matcher.match(descriptor_src[i], descriptor_dst, matches);
@@ -101,95 +102,92 @@ int main(int argc, char const *argv[])
 			for (int j = 0; j < in_mask.rows; ++j)
 				if (in_mask.at<unsigned short>(j, 0))
 					detected_objs_pt.push_back(dst_kp[j]);
+			detected_points.push_back(detected_objs_pt);
 		}
 
 		//Draw the matches
-		for (int i = 0; i < targets.size(); i++)
+		// for (int i = 0; i < targets.size(); i++)
+		// {
+		// Mat output;
+		// drawMatches(targets[i], keyPoints_src[i], first_frame, keyPoints_dst, valid_matches, output);
+		// namedWindow("Matches", WINDOW_NORMAL);
+		// resizeWindow("Matches", 600, 600);
+		// imshow("Matches", output);
+		// waitKey(0);
+		// }
+
+		vector<vector<Point2f>> img_corners;
+		for (int index = 0; index < 4; index++)
 		{
-			Mat output;
-			drawMatches(targets[i], keyPoints_src[i], first_frame, keyPoints_dst, valid_matches, output);
-			namedWindow("Matches", WINDOW_NORMAL);
-			resizeWindow("Matches", 600, 600);
-			imshow("Matches", output);
+			//Compute the traslation between src image to video
+			vector<Point2f> corners;
+			corners.push_back(Point2f(0, 0));
+			corners.push_back(Point2f((float)targets[index].cols, 0));
+			corners.push_back(Point2f((float)targets[index].cols, (float)targets[index].rows));
+			corners.push_back(Point2f(0, (float)targets[index].rows));
+			vector<Point2f> dst_corn;
+			perspectiveTransform(corners, dst_corn, homography[index]);
+			// Draw the rectangle
+			line(first_frame, dst_corn[0], dst_corn[1], Scalar(0, 255, 0), 4);
+			line(first_frame, dst_corn[1], dst_corn[2], Scalar(0, 255, 0), 4);
+			line(first_frame, dst_corn[2], dst_corn[3], Scalar(0, 255, 0), 4);
+			line(first_frame, dst_corn[3], dst_corn[0], Scalar(0, 255, 0), 4);
+
+			for (int i = 0; i < detected_points[index].size(); i++)
+			{
+				circle(first_frame, detected_points[index][i], 3, Scalar(0, 0, 255));
+			}
+			img_corners.push_back(dst_corn);
+
+			namedWindow("Targets", WINDOW_NORMAL);
+			resizeWindow("Targets", 600, 600);
+			imshow("Targets", first_frame);
 			waitKey(0);
 		}
 
-		int index = 2;
-		//Compute the traslation between src image to video
-		Point3d top_left = Point3d(0, 0, 1);
-		Point3d top_right = Point3d(targets[index].cols, 0, 1);
-		Point3d bottom_right = Point3d(targets[index].cols, targets[index].rows, 1);
-		Point3d bottom_left = Point3d(0, targets[index].rows, 1);
-
-		vector<Mat> dst_corn;
-		dst_corn.push_back(homography[index] * Mat(top_left));
-		dst_corn.push_back(homography[index] * Mat(top_right));
-		dst_corn.push_back(homography[index] * Mat(bottom_right));
-		dst_corn.push_back(homography[index] * Mat(bottom_left));
-
-		Point2f top_left_dst = Point2f(dst_corn[0].at<double>(0, 0), dst_corn[0].at<double>(1, 0));
-		Point2f top_right_dst = Point2f(dst_corn[1].at<double>(0, 0), dst_corn[1].at<double>(1, 0));
-		Point2f bttm_right_dst = Point2f(dst_corn[2].at<double>(0, 0), dst_corn[2].at<double>(1, 0));
-		Point2f bttm_left_dst = Point2f(dst_corn[3].at<double>(0, 0), dst_corn[3].at<double>(1, 0));
-
-		cout << "Top_left_dst =" << top_left_dst << endl;
-		cout << "top_right_dst =" << top_right_dst << endl;
-		cout << "bttm_right_dst =" << bttm_right_dst << endl;
-		cout << "bttm_left_dst =" << bttm_left_dst << endl;
-
-		//Draw the rectangle
-		line(first_frame, top_left_dst, top_right_dst, Scalar(0, 255, 0), 1, LINE_AA);
-		line(first_frame, top_right_dst, bttm_right_dst, Scalar(0, 255, 0), 1, LINE_AA);
-		line(first_frame, bttm_right_dst, bttm_left_dst, Scalar(0, 255, 0), 1, LINE_AA);
-		line(first_frame, bttm_left_dst, top_left_dst, Scalar(0, 255, 0), 1, LINE_AA);
-		namedWindow("Targets", WINDOW_NORMAL);
-		resizeWindow("Targets", 600, 600);
-		imshow("Targets", first_frame);
-		waitKey(0);
-
-		Mat previous;
+		Mat previous, frame, gray_frame;
 		cv::cvtColor(first_frame, previous, cv::COLOR_BGR2GRAY);
+		frame = first_frame.clone();
+		vector<Point2f> prev_points = detected_points[1];
+		vector<Point2f> next_points;
+		vector<Point2f> prev_corners = img_corners[1];
+		vector<Point2f> next_corners;
 
-		int condition = 1;
-		while (condition)
+		while (!frame.empty())
 		{
-			Mat frame;
 			cap >> frame;
+			vector<uchar> status;
+			vector<float> err;
+			TermCriteria term = TermCriteria(TermCriteria::COUNT + TermCriteria::EPS, 30, 0.01);
 
-			if (frame.empty())
-				condition = 0;
-			else
-			{
-				vector<Point2f> prev_corn_vec;
-				vector<Point2f> next_corn_vec;
-				vector<uchar> status;
-				vector<float> err;
-				TermCriteria term = TermCriteria(TermCriteria::COUNT + TermCriteria::EPS, 30, 0.01);
+			cvtColor(frame, gray_frame, cv::COLOR_BGR2GRAY);
 
-				prev_corn_vec.push_back(top_left_dst);
-				prev_corn_vec.push_back(top_right_dst);
-				prev_corn_vec.push_back(bttm_right_dst);
-				prev_corn_vec.push_back(bttm_left_dst);
+			calcOpticalFlowPyrLK(previous, gray_frame, prev_points, next_points, status, err,
+								 Size(21, 21), 3, term, 0);
 
-				cvtColor(first_frame, previous, cv::COLOR_BGR2GRAY);
+			vector<Point2f> new_pnt;
+			for (size_t i = 0; i < prev_points.size(); i++)
+				if (status[i] == 1)
+					new_pnt.push_back(next_points[i]);
 
-				calcOpticalFlowPyrLK(previous, frame, prev_corn_vec, next_corn_vec, status, err,
-									 Size(21, 21), 3, term, 0);
+			Mat mask;
+			Mat homo = findHomography(prev_points, new_pnt, mask);
 
-				// I am preparing for the next image
-				swap(frame, previous);
-				top_left_dst = prev_corn_vec[0];
-				top_right_dst = prev_corn_vec[1];
-				bttm_right_dst = prev_corn_vec[2];
-				bttm_left_dst = prev_corn_vec[3];
+			perspectiveTransform(prev_corners, next_corners, homo);
+			// Draw the rectangle
+			line(frame, next_corners[0], next_corners[1], Scalar(0, 255, 0), 4);
+			line(frame, next_corners[1], next_corners[2], Scalar(0, 255, 0), 4);
+			line(frame, next_corners[2], next_corners[3], Scalar(0, 255, 0), 4);
+			line(frame, next_corners[3], next_corners[0], Scalar(0, 255, 0), 4);
 
-				line(frame, top_left_dst, top_right_dst, Scalar(0, 255, 0), 1, LINE_AA);
-				line(frame, top_right_dst, bttm_right_dst, Scalar(0, 255, 0), 1, LINE_AA);
-				line(frame, bttm_right_dst, bttm_left_dst, Scalar(0, 255, 0), 1, LINE_AA);
-				line(frame, bttm_left_dst, top_left_dst, Scalar(0, 255, 0), 1, LINE_AA);
-				imshow("TMP2", frame);
-				waitKey(0);
-			}
+			imshow("TMP2", frame);
+			waitKey(30);
+
+			// I am preparing for the next image
+			prev_points = new_pnt;
+			prev_corners = next_corners;
+
+			previous = gray_frame.clone();
 		}
 	}
 
