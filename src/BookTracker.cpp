@@ -212,12 +212,13 @@ void BookTracker::setup()
 
         vector<Point2f> corners = genCornersForTarget(targets[i]);
         corners = updateCorners(corners, homo[i]);
-
-        Mat img = drawRectangle(firstFrame.image, corners, colors[i%colors.size()]);
         homo[i] = excludeOutliers(homo[i], corners);
 
+        Mat img = drawRectangle(firstFrame.image, corners, colors[i%colors.size()]);
+        drawTrackedFeatures(img, homo[i].points, colors[i%colors.size()]);
+        
         // Shows the rectangles computed
-        // TODO: Show the matches
+        
         namedWindow("Targets", WINDOW_NORMAL);
         resizeWindow("Targets", 600, 600);
         imshow("Targets", img);
@@ -243,9 +244,12 @@ void BookTracker::loop()
     }
 
     Mat displayFrame;
-    while (!frame.empty())
+    while (true)
     {
         cap >> frame;
+        if (frame.empty())
+            break;
+
         displayFrame = frame.clone();
         for (int i = 0; i < targets.size(); i++)
         {
