@@ -118,14 +118,14 @@ vector<Point2f> BookTracker::updateCorners(vector<Point2f> corners, homoWithPoin
     return new_corners;
 }
 
-Mat BookTracker::drawRectangle(Mat src, vector<Point2f> corners)
+Mat BookTracker::drawRectangle(Mat src, vector<Point2f> corners, Scalar color)
 {
     // Draws a rectangle onthe image src, with corners
     Mat dest = src.clone();
-    line(dest, corners[0], corners[1], Scalar(0, 255, 0), 4);
-    line(dest, corners[1], corners[2], Scalar(0, 255, 0), 4);
-    line(dest, corners[2], corners[3], Scalar(0, 255, 0), 4);
-    line(dest, corners[3], corners[0], Scalar(0, 255, 0), 4);
+    line(dest, corners[0], corners[1], color, 4);
+    line(dest, corners[1], corners[2], color, 4);
+    line(dest, corners[2], corners[3], color, 4);
+    line(dest, corners[3], corners[0], color, 4);
     return dest;
 }
 
@@ -153,7 +153,7 @@ pointsWithStatus BookTracker::computeOptFlow(Mat prevFrame, Mat frame, vector<Po
     return newKPoints;
 }
 
-frameWithPointsAndCorners BookTracker::processFrame(Mat frame, frameWithPointsAndCorners prevFrame)
+frameWithPointsAndCorners BookTracker::processFrame(Mat frame, frameWithPointsAndCorners prevFrame, Scalar color)
 {
     // Processes the frame, ie computes the optical flow, the homography and draws the rectangle.
     frameWithPointsAndCorners newFrame;
@@ -163,7 +163,7 @@ frameWithPointsAndCorners BookTracker::processFrame(Mat frame, frameWithPointsAn
     newFrame.corners = updateCorners(prevFrame.corners, newHomo);
     newFrame.frame = frame.clone();
 
-    Mat img = drawRectangle(frame, newFrame.corners);
+    Mat img = drawRectangle(frame, newFrame.corners, color);
     return newFrame;
 }
 
@@ -180,7 +180,7 @@ void BookTracker::setup()
         vector<Point2f> corners = genCornersForTarget(targets[i]);
         corners = updateCorners(corners, homo[i]);
 
-        Mat img = drawRectangle(firstFrame.image, corners);
+        Mat img = drawRectangle(firstFrame.image, corners, colors[i%colors.size()]);
 
         // Shows the rectangles computed
         // TODO: Show the matches
@@ -216,9 +216,9 @@ void BookTracker::loop()
         displayFrame = frame.clone();
         for (int i = 0; i < targets.size(); i++)
         {
-            prevFrames[i] = processFrame(frame, prevFrames[i]);
-            displayFrame = drawRectangle(displayFrame, prevFrames[i].corners);
-            drawTrackedFeatures(displayFrame, prevFrames[i].points.points);
+            prevFrames[i] = processFrame(frame, prevFrames[i], colors[i%colors.size()]);
+            displayFrame = drawRectangle(displayFrame, prevFrames[i].corners, colors[i%colors.size()]);
+            drawTrackedFeatures(displayFrame, prevFrames[i].points.points, colors[i%colors.size()]);
 
         }
         imshow("Video", displayFrame);
@@ -227,11 +227,11 @@ void BookTracker::loop()
 }
 
 
-void BookTracker::drawTrackedFeatures(Mat img, vector<Point2f> features)
+void BookTracker::drawTrackedFeatures(Mat img, vector<Point2f> features, Scalar color)
 {
 	//Points that we are tracking
 	for ( int i = 0 ; i < features.size(); ++i )
-		circle(img, features[i], 3, Scalar(255, 0, 255));
+		circle(img, features[i], 3, color);
 }
 
 
