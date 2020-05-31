@@ -193,6 +193,7 @@ frameWithPointsAndCorners BookTracker::processFrame(Mat frame, frameWithPointsAn
     newFrame.points = computeOptFlow(prevFrame.frame, frame, prevFrame.points.points);
 
     homoWithPoints newHomo = computeHomoAndInliers(prevFrame.points, newFrame.points);
+    newHomo = excludeOutliers(newHomo, prevFrame.corners);
     newFrame.corners = updateCorners(prevFrame.corners, newHomo);
     newFrame.frame = frame.clone();
 
@@ -216,7 +217,7 @@ void BookTracker::setup()
 
         Mat img = drawRectangle(firstFrame.image, corners, colors[i%colors.size()]);
         drawTrackedFeatures(img, homo[i].points, colors[i%colors.size()]);
-        
+
         // Shows the rectangles computed
         
         namedWindow("Targets", WINDOW_NORMAL);
