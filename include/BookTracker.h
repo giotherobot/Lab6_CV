@@ -77,6 +77,9 @@ public:
     homoWithPoints computeHomoAndInliers(pointsWithStatus src_kp, pointsWithStatus dst_kp);
     homoWithPoints computeHomoAndInliers(vector<Point2f> src_kp, vector<Point2f> dst_kp);
 
+    homoWithPoints excludeOutliers(homoWithPoints homo, vector<Point2f> corners);
+    float calculateArea(vector<Point2f> corners);
+
     pointsWithStatus computeOptFlow(Mat prevFrame, Mat frame, vector<Point2f> prevKPoints);
 
     frameWithPointsAndCorners processFrame(Mat frame, frameWithPointsAndCorners prevFrame);

@@ -19,7 +19,6 @@ void BookTracker::loadVideo(String video_file)
         cap >> firstFrame.image;
 }
 
-
 void BookTracker::computeFeaturesOnTargets()
 {
     // Computes features on each target
@@ -88,10 +87,44 @@ homoWithPoints BookTracker::computeHomoAndInliers(pointsWithStatus src_kp, point
 {
     vector<Point2f> tmp_src_kp;
     for (int i = 0; i < src_kp.points.size(); i++)
-	    if (dst_kp.status[i] == 1)
-	    	tmp_src_kp.push_back(src_kp.points[i]);
-    
+        if (dst_kp.status[i] == 1)
+            tmp_src_kp.push_back(src_kp.points[i]);
+
     return computeHomoAndInliers(tmp_src_kp, dst_kp.points);
+}
+
+homoWithPoints BookTracker::excludeOutliers(homoWithPoints homo, vector<Point2f> corners)
+{
+    // Calculate area of rectangle
+    float rectArea = calculateArea(corners);
+    vector<Point2f> tmp_points;
+    for (int i = 0; i < homo.points.size(); i++)
+    {
+        // Calculate area of triangles
+        float area = 0;
+        for (int j = 0; j < corners.size(); j++)
+        {
+            vector<Point2f> tmp_cor;
+            tmp_cor.push_back(corners[j]);
+            tmp_cor.push_back(homo.points[i]);
+            tmp_cor.push_back(corners[j + 1 < corners.size() ? j + 1 : 0]);
+            area += calculateArea(tmp_cor);
+        }
+        if (area <= rectArea)
+            tmp_points.push_back(homo.points[i]);
+    }
+    homo.points = tmp_points;
+    return homo;
+}
+
+float BookTracker::calculateArea(vector<Point2f> corners)
+{
+    float area;
+    for (int i = 0; i < corners.size(); i++)
+    {
+        area += corners[i].x * corners[i + 1 < corners.size() ? i + 1 : 0].y - corners[i].y * corners[i + 1 < corners.size() ? i + 1 : 0].x;
+    }
+    return abs(area / 2);
 }
 
 vector<Point2f> BookTracker::genCornersForTarget(imageWithFeatures target)
@@ -136,15 +169,15 @@ pointsWithStatus BookTracker::computeOptFlow(Mat prevFrame, Mat frame, vector<Po
     vector<uchar> status;
     vector<float> err;
     TermCriteria term = TermCriteria(TermCriteria::COUNT + TermCriteria::EPS, 30, 0.01);
-    
+
     vector<Point2f> nextKPoints;
     calcOpticalFlowPyrLK(grayPrevFrame, grayFrame, prevPoints, nextKPoints, status, err,
-    				 Size(15, 15), 3, term, 0);
+                         Size(15, 15), 3, term, 0);
 
     pointsWithStatus newKPoints;
     for (size_t i = 0; i < prevPoints.size(); i++)
-    	if (status[i] == 1)
-    		newKPoints.points.push_back(nextKPoints[i]);
+        if (status[i] == 1)
+            newKPoints.points.push_back(nextKPoints[i]);
 
     newKPoints.status = status;
     return newKPoints;
@@ -177,9 +210,11 @@ void BookTracker::setup()
         vector<Point2f> corners = genCornersForTarget(targets[i]);
         corners = updateCorners(corners, homo[i]);
 
+        homo[i] = excludeOutliers(homo[i], corners);
+
         Mat img = drawRectangle(firstFrame.image, corners);
 
-        // Shows the rectangles computed 
+        // Shows the rectangles computed
         // TODO: Show the matches
         namedWindow("Targets", WINDOW_NORMAL);
         resizeWindow("Targets", 600, 600);
@@ -188,9 +223,7 @@ void BookTracker::setup()
 
         this->corners.push_back(corners);
     }
-        
 }
-
 
 void BookTracker::loop()
 {
@@ -205,7 +238,7 @@ void BookTracker::loop()
         tmpFrame.corners = corners[i];
         prevFrames.push_back(tmpFrame);
     }
-    
+
     Mat displayFrame;
     while (!frame.empty())
     {
