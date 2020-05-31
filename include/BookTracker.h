@@ -1,237 +1,96 @@
-#include "BookTracker.h"
+#include <iostream>
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/xfeatures2d.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/ccalib.hpp>
+#include <opencv2/optflow.hpp>
 
+using namespace cv;
+using namespace std;
 
-void BookTracker::loadTargets(vector<String> target_files)
+struct imageWithFeatures
 {
-    // Loads targets to track
-    targets.resize(target_files.size());
-    for (int i = 0; i < target_files.size(); i++)
-        targets[i].image = imread(target_files[i]);
-}
+    Mat image;
+    vector<KeyPoint> keypoints;
+    Mat descriptors;
+};
 
-bool BookTracker::loadVideo(String video_file)
+struct homoWithPoints
 {
-    // Loads video
-    cap = VideoCapture(video_file);
-    if (cap.isOpened())
-    {
-        cap >> firstFrame.image;
-        return true;
-    }
+    Mat homography;
+    vector<Point2f> points;
+};
 
-    return false;
-}
-
-
-void BookTracker::computeFeaturesOnTargets()
+struct pointsWithStatus
 {
-    // Computes features on each target
-    Ptr<xfeatures2d::SIFT> sift = xfeatures2d::SIFT::create(nfeaturesTargets);
-
-    for (int i = 0; i < targets.size(); i++)
-    {
-        sift->detect(targets[i].image, targets[i].keypoints);
-        sift->compute(targets[i].image, targets[i].keypoints, targets[i].descriptors);
-    }
-}
-
-void BookTracker::computeFeaturesOnFrame()
-{
-    // Computes features on the first video frame
-    Ptr<xfeatures2d::SIFT> sift = xfeatures2d::SIFT::create(nfeaturesFrame);
-    sift->detect(firstFrame.image, firstFrame.keypoints);
-    sift->compute(firstFrame.image, firstFrame.keypoints, firstFrame.descriptors);
-}
-
-homoWithPoints BookTracker::matchTargetToFrame(imageWithFeatures target)
-{
-    // Mathes the features of the target with the first frame
-    BFMatcher matcher(cv::NORM_L2);
-    vector<DMatch> matches;
-    vector<DMatch> tmp_valid_matches;
-    matcher.match(target.descriptors, firstFrame.descriptors, matches);
-
-    //Keep Only matches under a certain threashold
-    vector<Point2f> src_kp;
-    vector<Point2f> dst_kp;
-
-    //Finding min dist
-    float min_dist = matches[0].distance;
-    for (int j = 1; j < matches.size(); ++j)
-        if (min_dist > matches[j].distance)
-            min_dist = matches[j].distance;
-
-    //Refine the matches
-    for (int j = 0; j < matches.size(); ++j)
-        if (matches[j].distance < min_dist * homoExcludeRatio)
-        {
-            src_kp.push_back(target.keypoints[j].pt);
-            dst_kp.push_back(firstFrame.keypoints[matches[j].trainIdx].pt);
-            tmp_valid_matches.push_back(matches[j]);
-        }
-
-    return computeHomoAndInliers(src_kp, dst_kp);
-}
-
-homoWithPoints BookTracker::computeHomoAndInliers(vector<Point2f> src_kp, vector<Point2f> dst_kp)
-{
-    // Use of RANSAC to discard outliers and compute homography
-    homoWithPoints output;
-    Mat in_mask;
-    output.homography = findHomography(src_kp, dst_kp, cv::RANSAC, 3, in_mask);
-
-    for (int j = 0; j < in_mask.rows; ++j)
-        if (in_mask.at<unsigned short>(j, 0))
-            output.points.push_back(dst_kp[j]);
-
-    return output;
-}
-
-homoWithPoints BookTracker::computeHomoAndInliers(pointsWithStatus src_kp, pointsWithStatus dst_kp)
-{
-    vector<Point2f> tmp_src_kp;
-    for (int i = 0; i < src_kp.points.size(); i++)
-	    if (dst_kp.status[i] == 1)
-	    	tmp_src_kp.push_back(src_kp.points[i]);
-
-    return computeHomoAndInliers(tmp_src_kp, dst_kp.points);
-}
-
-vector<Point2f> BookTracker::genCornersForTarget(imageWithFeatures target)
-{
-    // Generates the 4 corners from the target
-    vector<Point2f> corners;
-    corners.push_back(Point2f(0, 0));
-    corners.push_back(Point2f((float)target.image.cols, 0));
-    corners.push_back(Point2f((float)target.image.cols, (float)target.image.rows));
-    corners.push_back(Point2f(0, (float)target.image.rows));
-
-    return corners;
-}
-
-vector<Point2f> BookTracker::updateCorners(vector<Point2f> corners, homoWithPoints homo)
-{
-    // Computes the corners transform wrt to the homography
-    vector<Point2f> new_corners;
-    perspectiveTransform(corners, new_corners, homo.homography);
-
-    return new_corners;
-}
-
-Mat BookTracker::drawRectangle(Mat src, vector<Point2f> corners, Scalar color)
-{
-    // Draws a rectangle onthe image src, with corners
-    Mat dest = src.clone();
-    line(dest, corners[0], corners[1], color, 4);
-    line(dest, corners[1], corners[2], color, 4);
-    line(dest, corners[2], corners[3], color, 4);
-    line(dest, corners[3], corners[0], color, 4);
-    return dest;
-}
-
-pointsWithStatus BookTracker::computeOptFlow(Mat prevFrame, Mat frame, vector<Point2f> prevPoints)
-{
-    // Computes the optical flow from prevFrame to frame of the selected points
-    Mat grayFrame, grayPrevFrame;
-    cvtColor(frame, grayFrame, cv::COLOR_BGR2GRAY);
-    cvtColor(prevFrame, grayPrevFrame, cv::COLOR_BGR2GRAY);
-
+    vector<Point2f> points;
     vector<uchar> status;
-    vector<float> err;
-    TermCriteria term = TermCriteria(TermCriteria::COUNT + TermCriteria::EPS, 30, 0.01);
+};
 
-    vector<Point2f> nextKPoints;
-    calcOpticalFlowPyrLK(grayPrevFrame, grayFrame, prevPoints, nextKPoints, status, err,
-    				 Size(15, 15), 3, term, 0);
-
-    pointsWithStatus newKPoints;
-    for (size_t i = 0; i < prevPoints.size(); i++)
-    	if (status[i] == 1)
-    		newKPoints.points.push_back(nextKPoints[i]);
-
-    newKPoints.status = status;
-    return newKPoints;
-}
-
-frameWithPointsAndCorners BookTracker::processFrame(Mat frame, frameWithPointsAndCorners prevFrame, Scalar color)
+struct frameWithPointsAndCorners
 {
-    // Processes the frame, ie computes the optical flow, the homography and draws the rectangle.
-    frameWithPointsAndCorners newFrame;
-    newFrame.points = computeOptFlow(prevFrame.frame, frame, prevFrame.points.points);
+    Mat frame;
+    pointsWithStatus points;
+    vector<Point2f> corners;
+};
 
-    homoWithPoints newHomo = computeHomoAndInliers(prevFrame.points, newFrame.points);
-    newFrame.corners = updateCorners(prevFrame.corners, newHomo);
-    newFrame.frame = frame.clone();
-
-    Mat img = drawRectangle(frame, newFrame.corners, color);
-    return newFrame;
-}
-
-void BookTracker::setup()
+class BookTracker
 {
-    // Initial operations on the targets and first frame.
-    computeFeaturesOnTargets();
-    computeFeaturesOnFrame();
+private:
+    float homoExcludeRatio = 3;
+    int nfeaturesTargets = 5000;
+    int nfeaturesFrame = 20000;
 
-    for (int i = 0; i < targets.size(); i++)
+
+    VideoCapture cap;
+    vector<imageWithFeatures> targets;
+    imageWithFeatures firstFrame;
+    vector<homoWithPoints> homo;
+
+    vector<vector<Point2f>> corners;
+    vector<Scalar> colors;
+
+
+public:
+    BookTracker(){};
+    BookTracker(float homoExcludeRatio, int nfeaturesTargets, int nfeaturesFrame)
     {
-        homo.push_back(matchTargetToFrame(targets[i]));
+        this->homoExcludeRatio = homoExcludeRatio;
+        this->nfeaturesTargets = nfeaturesTargets;
+        this->nfeaturesFrame = nfeaturesFrame;
 
-        vector<Point2f> corners = genCornersForTarget(targets[i]);
-        corners = updateCorners(corners, homo[i]);
-
-        Mat img = drawRectangle(firstFrame.image, corners, colors[i%colors.size()]);
-
-        // Shows the rectangles computed
-        // TODO: Show the matches
-        namedWindow("Targets", WINDOW_NORMAL);
-        resizeWindow("Targets", 600, 600);
-        imshow("Targets", img);
-        waitKey(0);
-
-        this->corners.push_back(corners);
+        colors.push_back(Scalar(0, 0, 255));
+        colors.push_back(Scalar(0, 255, 255));
+        colors.push_back(Scalar(0, 255, 0));
+        colors.push_back(Scalar(255, 0, 0));
+        colors.push_back(Scalar(255, 0, 255));
+        colors.push_back(Scalar(255, 255, 0));
     }
 
-}
+    void loadTargets(vector<String> target_files);
+    bool loadVideo(String video_file);
 
+    void computeFeaturesOnTargets();
+    void computeFeaturesOnFrame();
+    void drawTrackedFeatures(Mat img, vector<Point2f> features, Scalar color);
 
-void BookTracker::loop()
-{
-    // Loops the video and computes each frame.
-    Mat frame = firstFrame.image.clone();
-    vector<frameWithPointsAndCorners> prevFrames;
-    for (int i = 0; i < targets.size(); i++)
-    {
-        frameWithPointsAndCorners tmpFrame;
-        tmpFrame.frame = firstFrame.image.clone();
-        tmpFrame.points.points = homo[i].points;
-        tmpFrame.corners = corners[i];
-        prevFrames.push_back(tmpFrame);
-    }
+    homoWithPoints matchTargetToFrame(imageWithFeatures target);
 
-    Mat displayFrame;
-    while (!frame.empty())
-    {
-        cap >> frame;
-        displayFrame = frame.clone();
-        for (int i = 0; i < targets.size(); i++)
-        {
-            prevFrames[i] = processFrame(frame, prevFrames[i], colors[i%colors.size()]);
-            displayFrame = drawRectangle(displayFrame, prevFrames[i].corners, colors[i%colors.size()]);
-            drawTrackedFeatures(displayFrame, prevFrames[i].points.points, colors[i%colors.size()]);
+    vector<Point2f> genCornersForTarget(imageWithFeatures target);
+    vector<Point2f> updateCorners(vector<Point2f> corners, homoWithPoints homo);
+    Mat drawRectangle(Mat src, vector<Point2f> corners, Scalar color);
 
-        }
-        imshow("Video", displayFrame);
-        waitKey(30);
-    }
-}
+    homoWithPoints computeHomoAndInliers(pointsWithStatus src_kp, pointsWithStatus dst_kp);
+    homoWithPoints computeHomoAndInliers(vector<Point2f> src_kp, vector<Point2f> dst_kp);
 
+    pointsWithStatus computeOptFlow(Mat prevFrame, Mat frame, vector<Point2f> prevKPoints);
 
-void BookTracker::drawTrackedFeatures(Mat img, vector<Point2f> features, Scalar color)
-{
-	//Points that we are tracking
-	for ( int i = 0 ; i < features.size(); ++i )
-		circle(img, features[i], 3, color);
-}
+    frameWithPointsAndCorners processFrame(Mat frame, frameWithPointsAndCorners prevFrame, Scalar color);
 
+    void setup();
+    void loop();
 
+};
