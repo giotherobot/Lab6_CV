@@ -1,7 +1,5 @@
-#include <BookTracker.h>
+#include "BookTracker.h"
 
-using namespace cv;
-using namespace std;
 
 void BookTracker::loadTargets(vector<String> target_files)
 {
@@ -11,12 +9,17 @@ void BookTracker::loadTargets(vector<String> target_files)
         targets[i].image = imread(target_files[i]);
 }
 
-void BookTracker::loadVideo(String video_file)
+bool BookTracker::loadVideo(String video_file)
 {
     // Loads video
     cap = VideoCapture(video_file);
     if (cap.isOpened())
+    {
         cap >> firstFrame.image;
+        return true;
+    }
+
+    return false;
 }
 
 
@@ -90,7 +93,7 @@ homoWithPoints BookTracker::computeHomoAndInliers(pointsWithStatus src_kp, point
     for (int i = 0; i < src_kp.points.size(); i++)
 	    if (dst_kp.status[i] == 1)
 	    	tmp_src_kp.push_back(src_kp.points[i]);
-    
+
     return computeHomoAndInliers(tmp_src_kp, dst_kp.points);
 }
 
@@ -136,7 +139,7 @@ pointsWithStatus BookTracker::computeOptFlow(Mat prevFrame, Mat frame, vector<Po
     vector<uchar> status;
     vector<float> err;
     TermCriteria term = TermCriteria(TermCriteria::COUNT + TermCriteria::EPS, 30, 0.01);
-    
+
     vector<Point2f> nextKPoints;
     calcOpticalFlowPyrLK(grayPrevFrame, grayFrame, prevPoints, nextKPoints, status, err,
     				 Size(15, 15), 3, term, 0);
@@ -179,7 +182,7 @@ void BookTracker::setup()
 
         Mat img = drawRectangle(firstFrame.image, corners);
 
-        // Shows the rectangles computed 
+        // Shows the rectangles computed
         // TODO: Show the matches
         namedWindow("Targets", WINDOW_NORMAL);
         resizeWindow("Targets", 600, 600);
@@ -188,7 +191,7 @@ void BookTracker::setup()
 
         this->corners.push_back(corners);
     }
-        
+
 }
 
 
@@ -205,7 +208,7 @@ void BookTracker::loop()
         tmpFrame.corners = corners[i];
         prevFrames.push_back(tmpFrame);
     }
-    
+
     Mat displayFrame;
     while (!frame.empty())
     {
@@ -215,8 +218,20 @@ void BookTracker::loop()
         {
             prevFrames[i] = processFrame(frame, prevFrames[i]);
             displayFrame = drawRectangle(displayFrame, prevFrames[i].corners);
+            drawTrackedFeatures(displayFrame, prevFrames[i].points.points);
+
         }
         imshow("Video", displayFrame);
         waitKey(30);
     }
 }
+
+
+void BookTracker::drawTrackedFeatures(Mat img, vector<Point2f> features)
+{
+	//Points that we are tracking
+	for ( int i = 0 ; i < features.size(); ++i )
+		circle(img, features[i], 3, Scalar(255, 0, 255));
+}
+
+
