@@ -24,13 +24,18 @@ struct homoWithPoints
     vector<Point2f> points;
 };
 
+struct pointsWithStatus
+{
+    vector<Point2f> points;
+    vector<uchar> status;
+};
+
 struct frameWithPointsAndCorners
 {
     Mat frame;
-    vector<Point2f> points;
+    pointsWithStatus points;
     vector<Point2f> corners;
 };
-
 
 class BookTracker
 {
@@ -69,9 +74,10 @@ public:
     vector<Point2f> updateCorners(vector<Point2f> corners, homoWithPoints homo);
     Mat drawRectangle(Mat src, vector<Point2f> corners);
     
+    homoWithPoints computeHomoAndInliers(pointsWithStatus src_kp, pointsWithStatus dst_kp);
     homoWithPoints computeHomoAndInliers(vector<Point2f> src_kp, vector<Point2f> dst_kp);
 
-    vector<Point2f> computeOptFlow(Mat prevFrame, Mat frame, vector<Point2f> prevKPoints);
+    pointsWithStatus computeOptFlow(Mat prevFrame, Mat frame, vector<Point2f> prevKPoints);
 
     frameWithPointsAndCorners processFrame(Mat frame, frameWithPointsAndCorners prevFrame);
 

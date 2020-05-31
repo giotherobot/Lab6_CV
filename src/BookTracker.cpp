@@ -84,6 +84,16 @@ homoWithPoints BookTracker::computeHomoAndInliers(vector<Point2f> src_kp, vector
     return output;
 }
 
+homoWithPoints BookTracker::computeHomoAndInliers(pointsWithStatus src_kp, pointsWithStatus dst_kp)
+{
+    vector<Point2f> tmp_src_kp;
+    for (int i = 0; i < src_kp.points.size(); i++)
+	    if (dst_kp.status[i] == 1)
+	    	tmp_src_kp.push_back(src_kp.points[i]);
+    
+    return computeHomoAndInliers(tmp_src_kp, dst_kp.points);
+}
+
 vector<Point2f> BookTracker::genCornersForTarget(imageWithFeatures target)
 {
     // Generates the 4 corners from the target
@@ -116,7 +126,7 @@ Mat BookTracker::drawRectangle(Mat src, vector<Point2f> corners)
     return dest;
 }
 
-vector<Point2f> BookTracker::computeOptFlow(Mat prevFrame, Mat frame, vector<Point2f> prevPoints)
+pointsWithStatus BookTracker::computeOptFlow(Mat prevFrame, Mat frame, vector<Point2f> prevPoints)
 {
     // Computes the optical flow from prevFrame to frame of the selected points
     Mat grayFrame, grayPrevFrame;
@@ -129,13 +139,14 @@ vector<Point2f> BookTracker::computeOptFlow(Mat prevFrame, Mat frame, vector<Poi
     
     vector<Point2f> nextKPoints;
     calcOpticalFlowPyrLK(grayPrevFrame, grayFrame, prevPoints, nextKPoints, status, err,
-    				 Size(21, 21), 3, term, 0);
+    				 Size(15, 15), 3, term, 0);
 
-    vector<Point2f> newKPoints;
+    pointsWithStatus newKPoints;
     for (size_t i = 0; i < prevPoints.size(); i++)
     	if (status[i] == 1)
-    		newKPoints.push_back(nextKPoints[i]);
+    		newKPoints.points.push_back(nextKPoints[i]);
 
+    newKPoints.status = status;
     return newKPoints;
 }
 
@@ -143,7 +154,7 @@ frameWithPointsAndCorners BookTracker::processFrame(Mat frame, frameWithPointsAn
 {
     // Processes the frame, ie computes the optical flow, the homography and draws the rectangle.
     frameWithPointsAndCorners newFrame;
-    newFrame.points = computeOptFlow(prevFrame.frame, frame, prevFrame.points);
+    newFrame.points = computeOptFlow(prevFrame.frame, frame, prevFrame.points.points);
 
     homoWithPoints newHomo = computeHomoAndInliers(prevFrame.points, newFrame.points);
     newFrame.corners = updateCorners(prevFrame.corners, newHomo);
@@ -190,7 +201,7 @@ void BookTracker::loop()
     {
         frameWithPointsAndCorners tmpFrame;
         tmpFrame.frame = firstFrame.image.clone();
-        tmpFrame.points = homo[i].points;
+        tmpFrame.points.points = homo[i].points;
         tmpFrame.corners = corners[i];
         prevFrames.push_back(tmpFrame);
     }

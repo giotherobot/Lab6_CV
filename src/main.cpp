@@ -17,7 +17,7 @@ int main(int argc, char const *argv[])
 	vector<String> target_files;
 	glob(argv[2], target_files);
 
-    BookTracker tracker = BookTracker(3, 500, 20000);
+    BookTracker tracker = BookTracker(5, 2000, 50000);
 
     tracker.loadTargets(target_files);
     tracker.loadVideo(video_file);
