@@ -1,6 +1,6 @@
 #include "BookTracker.h"
 
-//Function that loads the given target files
+// Function that loads the given target files
 void BookTracker::loadTargets(vector<String> target_files)
 {
     // Loads targets to track
@@ -9,7 +9,7 @@ void BookTracker::loadTargets(vector<String> target_files)
         targets[i].image = imread(target_files[i]);
 }
 
-//Function that returns true if the video is found, false otherwise
+// Function that returns true if the video is found, false otherwise
 bool BookTracker::loadVideo(String video_file)
 {
     // Loads video
@@ -23,7 +23,7 @@ bool BookTracker::loadVideo(String video_file)
     return false;
 }
 
-//Computes the features of each target
+// Computes the features of each target
 void BookTracker::computeFeaturesOnTargets()
 {
     // Computes features on each target
@@ -45,8 +45,8 @@ void BookTracker::computeFeaturesOnFrame()
     sift->compute(firstFrame.image, firstFrame.keypoints, firstFrame.descriptors);
 }
 
-//Returns a struct that contains the homography matrix and the inliers that
-//represent the matching information of our targets and the image
+// Returns a struct that contains the homography matrix and the inliers that
+// represent the matching information of our targets and the image
 homoWithPoints BookTracker::matchTargetToFrame(imageWithFeatures target)
 {
     // Matches the features of the target with the first frame
@@ -77,7 +77,7 @@ homoWithPoints BookTracker::matchTargetToFrame(imageWithFeatures target)
     return computeHomoAndInliers(src_kp, dst_kp);
 }
 
-//This support function actually calculates the Homography matrix and the inliers
+// This support function actually calculates the Homography matrix and the inliers
 homoWithPoints BookTracker::computeHomoAndInliers(vector<Point2f> src_kp, vector<Point2f> dst_kp)
 {
     // Use of RANSAC to discard outliers and compute homography
@@ -92,18 +92,18 @@ homoWithPoints BookTracker::computeHomoAndInliers(vector<Point2f> src_kp, vector
     return output;
 }
 
-//Support function that takes in consideration only points that have been evaluated as correct
+// Support function that takes in consideration only points that have been evaluated as correct
 homoWithPoints BookTracker::computeHomoAndInliers(pointsWithStatus src_kp, pointsWithStatus dst_kp)
 {
     vector<Point2f> tmp_src_kp;
     for (int i = 0; i < src_kp.points.size(); i++)
-	    if (dst_kp.status[i] == 1)
-	    	tmp_src_kp.push_back(src_kp.points[i]);
+        if (dst_kp.status[i] == 1)
+            tmp_src_kp.push_back(src_kp.points[i]);
 
     return computeHomoAndInliers(tmp_src_kp, dst_kp.points);
 }
 
-//Excludes the points that are outside of the rectangle
+// Excludes the points that are outside of the rectangle
 homoWithPoints BookTracker::excludeOutliers(homoWithPoints homo, vector<Point2f> corners)
 {
     // Calculate area of rectangle
@@ -128,7 +128,7 @@ homoWithPoints BookTracker::excludeOutliers(homoWithPoints homo, vector<Point2f>
     return homo;
 }
 
-//Calculates the area of the rectangle surrounding the target
+// Calculates the area of a polygon defined by corners
 float BookTracker::calculateArea(vector<Point2f> corners)
 {
     float area;
@@ -139,7 +139,7 @@ float BookTracker::calculateArea(vector<Point2f> corners)
     return abs(area / 2);
 }
 
-//Creating the corners of the targets in the respectives positions
+// Creating the corners of the targets in the respectives positions
 vector<Point2f> BookTracker::genCornersForTarget(imageWithFeatures target)
 {
     // Generates the 4 corners from the target
@@ -152,7 +152,7 @@ vector<Point2f> BookTracker::genCornersForTarget(imageWithFeatures target)
     return corners;
 }
 
-//Updating the corners position through the homography matrix
+// Updating the corners position through the homography matrix
 vector<Point2f> BookTracker::updateCorners(vector<Point2f> corners, homoWithPoints homo)
 {
     // Computes the corners transform wrt to the homography
@@ -162,7 +162,7 @@ vector<Point2f> BookTracker::updateCorners(vector<Point2f> corners, homoWithPoin
     return new_corners;
 }
 
-//Drawing the contours of the targets given its corners
+// Drawing the contours of the targets given its corners
 Mat BookTracker::drawRectangle(Mat src, vector<Point2f> corners, Scalar color)
 {
     // Draws a rectangle on the image src, with corners
@@ -174,7 +174,7 @@ Mat BookTracker::drawRectangle(Mat src, vector<Point2f> corners, Scalar color)
     return dest;
 }
 
-//Performs the tracking of some relevant points from one frame to the next
+// Performs the tracking of some relevant points from one frame to the next
 pointsWithStatus BookTracker::computeOptFlow(Mat prevFrame, Mat frame, vector<Point2f> prevPoints)
 {
     // Computes the optical flow from prevFrame to frame of the selected points
@@ -206,11 +206,11 @@ frameWithPointsAndCorners BookTracker::processFrame(Mat frame, frameWithPointsAn
     frameWithPointsAndCorners newFrame;
     newFrame.points = computeOptFlow(prevFrame.frame, frame, prevFrame.points.points);
 
-    //Computing the homography matrix that represents the transformation from one img to the other
+    // Computing the homography matrix that represents the transformation from one img to the other
     homoWithPoints newHomo = computeHomoAndInliers(prevFrame.points, newFrame.points);
     newHomo = excludeOutliers(newHomo, prevFrame.corners);
 
-    //Calculating new corners
+    // Calculating new corners
     newFrame.corners = updateCorners(prevFrame.corners, newHomo);
     newFrame.frame = frame.clone();
 
@@ -218,7 +218,24 @@ frameWithPointsAndCorners BookTracker::processFrame(Mat frame, frameWithPointsAn
     return newFrame;
 }
 
-//Initializing starting features and showing the targets on the first frame
+// Function that shows which features of an object are are tracked
+void BookTracker::drawTrackedFeatures(Mat img, vector<Point2f> features, Scalar color)
+{
+    // Points that we are tracking
+    for (int i = 0; i < features.size(); ++i)
+        circle(img, features[i], 3, color);
+}
+
+// Initialize the video output
+void BookTracker::initVideoOut()
+{
+    Size S = Size((int)cap.get(CAP_PROP_FRAME_WIDTH), (int)cap.get(CAP_PROP_FRAME_HEIGHT)); // Get video size
+    float fps = cap.get(CAP_PROP_FPS); // get video fps
+    int ex = static_cast<int>(cap.get(CAP_PROP_FOURCC)); // Get video codec
+    vidOut = VideoWriter("output.avi", ex, fps, S, true); // Open Video output
+}
+
+// Initializing starting features and showing the targets on the first frame
 void BookTracker::setup()
 {
     // Initial operations on the targets and first frame.
@@ -233,28 +250,28 @@ void BookTracker::setup()
         corners = updateCorners(corners, homo[i]);
         homo[i] = excludeOutliers(homo[i], corners);
 
-        Mat img = drawRectangle(firstFrame.image, corners, colors[i%colors.size()]);
-        drawTrackedFeatures(img, homo[i].points, colors[i%colors.size()]);
+        Mat img = drawRectangle(firstFrame.image, corners, colors[i % colors.size()]);
+        drawTrackedFeatures(img, homo[i].points, colors[i % colors.size()]);
 
         // Shows the rectangles computed
         namedWindow("Targets", WINDOW_NORMAL);
         resizeWindow("Targets", 600, 600);
         imshow("Targets", img);
-        waitKey(0);
+        if (waitKey(0) == 's')
+            imwrite("TrackedFeatures" + to_string(i) + ".png", img);
 
         this->corners.push_back(corners);
     }
-
 }
 
-//Actual loop in which the video is processed, it shows the tracking of the various objects
+// Actual loop in which the video is processed, it shows the tracking of the various objects
 void BookTracker::loop()
 {
     // Loops the video and computes each frame.
     Mat frame = firstFrame.image.clone();
     vector<frameWithPointsAndCorners> prevFrames;
 
-    //Store information of the position of each target in the frame
+    // Store information of the position of each target in the frame
     for (int i = 0; i < targets.size(); i++)
     {
         frameWithPointsAndCorners tmpFrame;
@@ -264,37 +281,33 @@ void BookTracker::loop()
         prevFrames.push_back(tmpFrame);
     }
 
+    initVideoOut();
+
     Mat displayFrame;
     bool ended = false;
     while (!ended)
     {
         cap >> frame;
 
-        //Condition that indicates the video is finished
+        // Condition that indicates the video is finished
         if (frame.empty())
+        {
             ended = true;
+            vidOut.release();
+        }
         else
         {
-        	//Process each target to find its position in the current frame from the previous one
-			displayFrame = frame.clone();
-			for (int i = 0; i < targets.size(); i++)
-			{
-				prevFrames[i] = processFrame(frame, prevFrames[i], colors[i%colors.size()]);
-				displayFrame = drawRectangle(displayFrame, prevFrames[i].corners, colors[i%colors.size()]);
-				drawTrackedFeatures(displayFrame, prevFrames[i].points.points, colors[i%colors.size()]);
-			}
-			imshow("Video", displayFrame);
-			waitKey(30);
+            // Process each target to find its position in the current frame from the previous one
+            displayFrame = frame.clone();
+            for (int i = 0; i < targets.size(); i++)
+            {
+                prevFrames[i] = processFrame(frame, prevFrames[i], colors[i % colors.size()]);
+                displayFrame = drawRectangle(displayFrame, prevFrames[i].corners, colors[i % colors.size()]);
+                drawTrackedFeatures(displayFrame, prevFrames[i].points.points, colors[i % colors.size()]);
+            }
+            imshow("Video", displayFrame);
+            vidOut << displayFrame;
+            waitKey(30);
         }
     }
 }
-
-//Function that shows which features of an object are are tracked
-void BookTracker::drawTrackedFeatures(Mat img, vector<Point2f> features, Scalar color)
-{
-	//Points that we are tracking
-	for ( int i = 0 ; i < features.size(); ++i )
-		circle(img, features[i], 3, color);
-}
-
-

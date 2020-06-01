@@ -36,3 +36,14 @@ build/
 data/
 pdfs/
 .vscode/
+output.avi
+
+*.aux
+
+*.log
+
+report/report.synctex.gz
+
+*.fls
+
+*.fdb_latexmk

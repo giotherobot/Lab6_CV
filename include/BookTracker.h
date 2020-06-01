@@ -53,6 +53,7 @@ private:
     vector<vector<Point2f>> corners;
     vector<Scalar> colors;
 
+    VideoWriter vidOut;
 
 public:
     BookTracker(){};
@@ -96,4 +97,6 @@ public:
     void setup();
     void loop();
 
+    void saveImage(Mat image);
+    void initVideoOut();
 };
