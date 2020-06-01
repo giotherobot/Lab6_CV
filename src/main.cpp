@@ -8,7 +8,7 @@ int main(int argc, char const *argv[])
 {
     if (argc != 3)
 	{
-		cout << "Usage: \n \t program <path-to-video-file> <path-to-targets> \n \t The second argument should be a valid glob string. " << endl;
+		cout << "Usage: \n \t lab6 <path-to-video-file> <path-to-targets> \n \t The second argument should be a valid glob string. " << endl;
 		return -1;
 	}
 
