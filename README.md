@@ -8,4 +8,4 @@ Where the path to targets is a valid glob string.
 
 The resulting video can be found at:
 
-[video on youtube]{https://youtu.be/u_683hzvI8o}
+[video on youtube](https://youtu.be/u_683hzvI8o)
